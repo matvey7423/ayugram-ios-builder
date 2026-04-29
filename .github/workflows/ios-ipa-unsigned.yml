@@ -36,10 +36,8 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p ios-port/vendor
-          curl -L "https://github.com/TelegramMessenger/Telegram-iOS/archive/refs/heads/master.zip" -o ios-port/vendor/telegram-ios-master.zip
-          unzip -q -o ios-port/vendor/telegram-ios-master.zip -d ios-port/vendor
           rm -rf ios-port/vendor/Telegram-iOS
-          mv ios-port/vendor/Telegram-iOS-master ios-port/vendor/Telegram-iOS
+          git clone --recursive -j8 https://github.com/TelegramMessenger/Telegram-iOS.git ios-port/vendor/Telegram-iOS
 
       - name: Prepare CI configuration
         run: |
