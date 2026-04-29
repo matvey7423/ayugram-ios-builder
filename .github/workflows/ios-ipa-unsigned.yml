@@ -1,6 +1,9 @@
 name: Build iOS IPA (No Apple Cert)
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       api_id:
@@ -15,6 +18,11 @@ on:
         description: "Build number"
         required: false
         default: "100001"
+
+env:
+  TELEGRAM_API_ID: ${{ github.event.inputs.api_id || '8' }}
+  TELEGRAM_API_HASH: ${{ github.event.inputs.api_hash || '7245de8e747a0d6fbe11f7cc14fcc0bb' }}
+  WORKFLOW_BUILD_NUMBER: ${{ github.event.inputs.build_number || github.run_number }}
 
 jobs:
   build:
@@ -38,12 +46,13 @@ jobs:
           set -euxo pipefail
           cd ios-port/vendor/Telegram-iOS
           python3 - <<'PY'
+          import os
           import json
           p = "build-system/appstore-configuration.json"
           with open(p, "r", encoding="utf-8") as f:
               c = json.load(f)
-          c["api_id"] = "${{ github.event.inputs.api_id }}"
-          c["api_hash"] = "${{ github.event.inputs.api_hash }}"
+          c["api_id"] = os.environ.get("TELEGRAM_API_ID", "8")
+          c["api_hash"] = os.environ.get("TELEGRAM_API_HASH", "7245de8e747a0d6fbe11f7cc14fcc0bb")
           # Keep these values matched to fake-codesigning profiles bundled by Telegram-iOS:
           c["team_id"] = "C67CF9S4VU"
           c["bundle_id"] = "ph.telegra.Telegraph"
@@ -78,7 +87,7 @@ jobs:
             --configurationPath=build-system/ayugram-ci-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
-            --buildNumber="${{ github.event.inputs.build_number }}" \
+            --buildNumber="${{ env.WORKFLOW_BUILD_NUMBER }}" \
             --outputBuildArtifactsPath="$GITHUB_WORKSPACE/build-artifacts"
 
       - name: Upload IPA artifacts
