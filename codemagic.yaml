@@ -1,0 +1,64 @@
+workflows:
+  ayugram-ios-unsigned:
+    name: AyuGram iOS Unsigned IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    environment:
+      vars:
+        TELEGRAM_API_ID: "8"
+        TELEGRAM_API_HASH: "7245de8e747a0d6fbe11f7cc14fcc0bb"
+        BUILD_NUMBER: "100001"
+
+    scripts:
+      - name: Clone AyuGram source
+        script: |
+          git clone --recursive -j8 https://github.com/AyuGram/AyuGram4IOS.git $CM_BUILD_DIR/ayugram
+
+      - name: Prepare configuration
+        script: |
+          cd $CM_BUILD_DIR/ayugram
+          python3 - <<'PY'
+          import os, json
+          p = "build-system/appstore-configuration.json"
+          with open(p, "r") as f:
+              c = json.load(f)
+          c["api_id"] = os.environ.get("TELEGRAM_API_ID", "8")
+          c["api_hash"] = os.environ.get("TELEGRAM_API_HASH", "7245de8e747a0d6fbe11f7cc14fcc0bb")
+          c["team_id"] = "C67CF9S4VU"
+          c["bundle_id"] = "ph.telegra.Telegraph"
+          with open("build-system/ayugram-ci-configuration.json", "w") as f:
+              json.dump(c, f, indent=2)
+          PY
+
+      - name: Select Xcode version
+        script: |
+          cd $CM_BUILD_DIR/ayugram
+          XCODE_VERSION=$(python3 -c "import json; print(json.load(open('versions.json'))['xcode'])")
+          if [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "Xcode $XCODE_VERSION not found, using default"
+          fi
+          xcodebuild -version
+
+      - name: Import fake certificates
+        script: |
+          cd $CM_BUILD_DIR/ayugram
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+      - name: Build IPA
+        script: |
+          cd $CM_BUILD_DIR/ayugram
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=build-system/ayugram-ci-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath="$CM_BUILD_DIR/artifacts"
+
+    artifacts:
+      - $CM_BUILD_DIR/artifacts/**/*.ipa
+      - $CM_BUILD_DIR/artifacts/**/*.app
