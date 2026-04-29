@@ -1,0 +1,88 @@
+name: Build iOS IPA (No Apple Cert)
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_id:
+        description: "Telegram API ID (for runtime authorization)"
+        required: false
+        default: "8"
+      api_hash:
+        description: "Telegram API Hash"
+        required: false
+        default: "7245de8e747a0d6fbe11f7cc14fcc0bb"
+      build_number:
+        description: "Build number"
+        required: false
+        default: "100001"
+
+jobs:
+  build:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Telegram-iOS source
+        run: |
+          set -euxo pipefail
+          mkdir -p ios-port/vendor
+          curl -L "https://github.com/TelegramMessenger/Telegram-iOS/archive/refs/heads/master.zip" -o ios-port/vendor/telegram-ios-master.zip
+          unzip -q -o ios-port/vendor/telegram-ios-master.zip -d ios-port/vendor
+          rm -rf ios-port/vendor/Telegram-iOS
+          mv ios-port/vendor/Telegram-iOS-master ios-port/vendor/Telegram-iOS
+
+      - name: Prepare CI configuration
+        run: |
+          set -euxo pipefail
+          cd ios-port/vendor/Telegram-iOS
+          python3 - <<'PY'
+          import json
+          p = "build-system/appstore-configuration.json"
+          with open(p, "r", encoding="utf-8") as f:
+              c = json.load(f)
+          c["api_id"] = "${{ github.event.inputs.api_id }}"
+          c["api_hash"] = "${{ github.event.inputs.api_hash }}"
+          # Keep these values matched to fake-codesigning profiles bundled by Telegram-iOS:
+          c["team_id"] = "C67CF9S4VU"
+          c["bundle_id"] = "ph.telegra.Telegraph"
+          with open("build-system/ayugram-ci-configuration.json", "w", encoding="utf-8") as f:
+              json.dump(c, f, indent=2)
+          PY
+
+      - name: Select Xcode from versions.json (best effort)
+        run: |
+          set -euxo pipefail
+          cd ios-port/vendor/Telegram-iOS
+          XCODE_VERSION="$(python3 - <<'PY'
+          import json
+          print(json.load(open("versions.json"))["xcode"])
+          PY
+          )"
+          if [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "Requested Xcode ${XCODE_VERSION} not found on runner; using default Xcode."
+          fi
+          xcodebuild -version
+
+      - name: Build IPA with fake codesigning
+        run: |
+          set -euxo pipefail
+          cd ios-port/vendor/Telegram-iOS
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=build-system/ayugram-ci-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="${{ github.event.inputs.build_number }}" \
+            --outputBuildArtifactsPath="$GITHUB_WORKSPACE/build-artifacts"
+
+      - name: Upload IPA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ayugram-ios-ipa-unsigned
+          path: build-artifacts
